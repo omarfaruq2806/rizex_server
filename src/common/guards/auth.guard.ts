@@ -17,11 +17,11 @@ export class AuthGuard implements CanActivate {
     // Convert Express headers to standard Web Headers
     const headers = new Headers();
     Object.entries(request.headers).forEach(([key, value]) => {
-      if (value) {
+      if (value !== undefined && value !== null) {
         if (Array.isArray(value)) {
-          value.forEach((v) => headers.append(key, v));
+          value.forEach((v) => headers.append(key, String(v)));
         } else {
-          headers.set(key, value);
+          headers.set(key, String(value));
         }
       }
     });

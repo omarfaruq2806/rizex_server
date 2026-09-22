@@ -39,11 +39,11 @@ export class AuthController {
   async logout(@Req() req: Request) {
     const headers = new Headers();
     Object.entries(req.headers).forEach(([key, value]) => {
-      if (value) {
+      if (value !== undefined && value !== null) {
         if (Array.isArray(value)) {
-          value.forEach((v) => headers.append(key, v));
+          value.forEach((v) => headers.append(key, String(v)));
         } else {
-          headers.set(key, value);
+          headers.set(key, String(value));
         }
       }
     });
