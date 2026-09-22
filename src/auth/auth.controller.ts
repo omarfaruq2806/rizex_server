@@ -51,9 +51,25 @@ export class AuthController {
   }
 
   @Get('me')
-  @UseGuards(AuthGuard)
-  async getMe(@CurrentUser() user: any) {
-    return this.authService.getProfile(user.id);
+  async getMe(@Req() req: Request) {
+    const headers = new Headers();
+    Object.entries(req.headers).forEach(([key, value]) => {
+      if (value !== undefined && value !== null) {
+        if (Array.isArray(value)) {
+          value.forEach((v) => headers.append(key, String(v)));
+        } else {
+          headers.set(key, String(value));
+        }
+      }
+    });
+
+    const session = await this.authService.getSessionFromHeaders(headers);
+    if (!session || !session.user) {
+      return { user: null };
+    }
+
+    const profile = await this.authService.getProfile(session.user.id);
+    return { user: profile };
   }
 
   // Fallback wildcard handler for direct Better Auth API client calls

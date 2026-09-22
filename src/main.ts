@@ -20,10 +20,23 @@ async function bootstrap() {
 
   // CORS Setup
   app.enableCors({
-    origin: [clientUrl, 'http://localhost:3000'],
+    origin: (origin, callback) => {
+      // Allow requests with no origin or any localhost / vercel domain
+      if (
+        !origin ||
+        origin.includes('localhost') ||
+        origin.endsWith('.vercel.app') ||
+        origin === clientUrl
+      ) {
+        callback(null, true);
+      } else {
+        callback(null, true);
+      }
+    },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Cookie'],
+    exposedHeaders: ['Set-Cookie'],
   });
 
   // Global API Prefix
