@@ -1,0 +1,569 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ==============================
+// AUTH & USER MODELS (Better Auth + Agency Roles)
+// ==============================
+
+model User {
+  id            String    @id @default(cuid())
+  name          String
+  email         String    @unique
+  emailVerified Boolean   @default(false)
+  image         String?
+  role          UserRole  @default(CLIENT)
+
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // Better Auth Relations
+  sessions      Session[]
+  accounts      Account[]
+
+  // Agency Workflow Relations
+  quoteRequests  QuoteRequest[]
+  clientOrders   Order[]           @relation("ClientOrders")
+  assignedOrders OrderAssignment[]
+  sentMessages   Message[]
+  uploadedFiles  ProjectFile[]
+  revisions      Revision[]
+  reviews        Review[]
+  notifications  Notification[]
+  payments       Payment[]         @relation("UserPayments")
+
+  createdQuotes  Quote[]           @relation("CreatedQuotes")
+  assignedBy     OrderAssignment[] @relation("AssignedBy")
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  ipAddress String?
+  userAgent String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model Account {
+  id                    String    @id @default(cuid())
+  userId                String
+  accountId             String
+  providerId            String
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  password              String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model Verification {
+  id         String   @id @default(cuid())
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([identifier])
+}
+
+// ==============================
+// SERVICE
+// ==============================
+
+model ServiceCategory {
+  id          String   @id @default(cuid())
+  name        String
+  slug        String   @unique
+  description String?
+  image       String?
+  isActive    Boolean  @default(true)
+  sortOrder   Int      @default(0)
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  services    Service[]
+}
+
+model Service {
+  id            String   @id @default(cuid())
+  categoryId    String
+
+  name          String
+  slug          String   @unique
+  description   String?
+  image         String?
+
+  isActive      Boolean  @default(true)
+  sortOrder     Int      @default(0)
+
+  // Pricing configuration
+  showPrice     Boolean  @default(false)
+  startingPrice Decimal? @db.Decimal(12, 2)
+  currency      String   @default("BDT")
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  category      ServiceCategory    @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+
+  requirementFields RequirementField[]
+  quoteRequests     QuoteRequest[]
+  orders            Order[]
+
+  @@index([categoryId])
+  @@index([isActive])
+}
+
+// ==============================
+// DYNAMIC REQUIREMENT FORM
+// ==============================
+
+model RequirementField {
+  id          String               @id @default(cuid())
+  serviceId   String
+
+  label       String
+  name        String
+  type        RequirementFieldType
+  placeholder String?
+  description String?
+
+  isRequired  Boolean              @default(false)
+  isActive    Boolean              @default(true)
+  sortOrder   Int                  @default(0)
+
+  // For SELECT / RADIO / CHECKBOX
+  options     Json?
+
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
+
+  service     Service              @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  values      RequirementValue[]
+
+  @@unique([serviceId, name])
+  @@index([serviceId, sortOrder])
+}
+
+model RequirementValue {
+  id        String           @id @default(cuid())
+  fieldId   String
+  requestId String
+
+  // Flexible value
+  value     Json
+
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+
+  field     RequirementField @relation(fields: [fieldId], references: [id], onDelete: Cascade)
+  request   QuoteRequest     @relation(fields: [requestId], references: [id], onDelete: Cascade)
+
+  @@unique([fieldId, requestId])
+  @@index([requestId])
+}
+
+// ==============================
+// QUOTE REQUEST
+// ==============================
+
+model QuoteRequest {
+  id                String             @id @default(cuid())
+  clientId          String
+  serviceId         String
+
+  projectName       String?
+  description       String?
+
+  status            QuoteRequestStatus @default(SUBMITTED)
+
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+
+  client            User               @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  service           Service            @relation(fields: [serviceId], references: [id], onDelete: Restrict)
+
+  requirementValues RequirementValue[]
+  quote             Quote?
+
+  @@index([clientId])
+  @@index([serviceId])
+  @@index([status])
+}
+
+// ==============================
+// QUOTE
+// ==============================
+
+model Quote {
+  id            String        @id @default(cuid())
+  requestId     String        @unique
+
+  createdById   String
+
+  amount        Decimal       @db.Decimal(12, 2)
+  advanceAmount Decimal       @db.Decimal(12, 2)
+  currency      String        @default("BDT")
+
+  estimatedDays Int?
+  revisions     Int           @default(0)
+
+  includedItems Json?
+  notes         String?
+
+  status        QuoteStatus   @default(DRAFT)
+
+  expiresAt     DateTime?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  request       QuoteRequest  @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  createdBy     User          @relation("CreatedQuotes", fields: [createdById], references: [id], onDelete: Restrict)
+
+  order         Order?
+
+  @@index([status])
+}
+
+// ==============================
+// ORDER / PROJECT
+// ==============================
+
+model Order {
+  id               String            @id @default(cuid())
+  orderNumber      String            @unique
+
+  clientId         String
+  serviceId        String
+  quoteId          String            @unique
+
+  title            String
+
+  status           OrderStatus       @default(AWAITING_PAYMENT)
+  progress         Int               @default(0)
+
+  startDate        DateTime?
+  expectedDelivery DateTime?
+  completedAt      DateTime?
+
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+
+  client           User              @relation("ClientOrders", fields: [clientId], references: [id], onDelete: Restrict)
+  service          Service           @relation(fields: [serviceId], references: [id], onDelete: Restrict)
+  quote            Quote             @relation(fields: [quoteId], references: [id], onDelete: Restrict)
+
+  assignments      OrderAssignment[]
+  messages         Message[]
+  files            ProjectFile[]
+  revisions        Revision[]
+  delivery         Delivery?
+  review           Review?
+  payments         Payment[]
+  notifications    Notification[]
+
+  @@index([clientId])
+  @@index([status])
+  @@index([serviceId])
+}
+
+// ==============================
+// PAYMENT (New Added)
+// ==============================
+
+model Payment {
+  id              String        @id @default(cuid())
+  orderId         String
+  clientId        String
+
+  amount          Decimal       @db.Decimal(12, 2)
+  currency        String        @default("BDT")
+  method          PaymentMethod @default(MANUAL)
+  status          PaymentStatus @default(PENDING)
+
+  transactionId   String?       @unique
+  gatewayResponse Json?
+
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  order           Order         @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  client          User          @relation("UserPayments", fields: [clientId], references: [id], onDelete: Restrict)
+
+  @@index([orderId])
+  @@index([clientId])
+  @@index([status])
+}
+
+// ==============================
+// TEAM ASSIGNMENT
+// ==============================
+
+model OrderAssignment {
+  id           String    @id @default(cuid())
+  orderId      String
+  memberId     String
+  assignedById String
+
+  assignedAt   DateTime  @default(now())
+  unassignedAt DateTime?
+
+  order        Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  member       User      @relation(fields: [memberId], references: [id], onDelete: Restrict)
+  assignedBy   User      @relation("AssignedBy", fields: [assignedById], references: [id], onDelete: Restrict)
+
+  @@index([orderId])
+  @@index([memberId])
+}
+
+// ==============================
+// CHAT
+// ==============================
+
+model Message {
+  id        String   @id @default(cuid())
+  orderId   String
+  senderId  String
+
+  content   String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  order     Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  sender    User     @relation(fields: [senderId], references: [id], onDelete: Restrict)
+
+  @@index([orderId, createdAt])
+}
+
+// ==============================
+// FILES
+// ==============================
+
+model ProjectFile {
+  id         String       @id @default(cuid())
+  orderId    String
+  uploaderId String
+
+  name       String
+  url        String
+  key        String?
+  mimeType   String?
+  size       Int?
+
+  category   FileCategory @default(OTHER)
+
+  createdAt  DateTime     @default(now())
+
+  order      Order        @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  uploader   User         @relation(fields: [uploaderId], references: [id], onDelete: Restrict)
+
+  @@index([orderId])
+}
+
+// ==============================
+// REVISION
+// ==============================
+
+model Revision {
+  id          String         @id @default(cuid())
+  orderId     String
+  clientId    String
+
+  section     String?
+  reason      String
+  description String
+
+  status      RevisionStatus @default(PENDING)
+
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  order       Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  client      User           @relation(fields: [clientId], references: [id], onDelete: Restrict)
+
+  @@index([orderId])
+}
+
+// ==============================
+// DELIVERY
+// ==============================
+
+model Delivery {
+  id          String         @id @default(cuid())
+  orderId     String         @unique
+
+  message     String?
+  submittedAt DateTime       @default(now())
+  approvedAt  DateTime?
+
+  status      DeliveryStatus @default(PENDING)
+
+  order       Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
+}
+
+// ==============================
+// REVIEW
+// ==============================
+
+model Review {
+  id          String   @id @default(cuid())
+  orderId     String   @unique
+  clientId    String
+
+  rating      Int
+  comment     String?
+
+  isPublished Boolean  @default(false)
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  order       Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  client      User     @relation(fields: [clientId], references: [id], onDelete: Restrict)
+}
+
+// ==============================
+// NOTIFICATION
+// ==============================
+
+model Notification {
+  id        String           @id @default(cuid())
+  userId    String
+  orderId   String?
+
+  title     String
+  message   String?
+
+  type      NotificationType
+  isRead    Boolean          @default(false)
+
+  createdAt DateTime         @default(now())
+
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  order     Order?           @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([userId, isRead])
+}
+
+// ==============================
+// ENUMS
+// ==============================
+
+enum UserRole {
+  CLIENT
+  ADMIN
+  TEAM_MEMBER
+}
+
+enum RequirementFieldType {
+  TEXT
+  TEXTAREA
+  NUMBER
+  EMAIL
+  URL
+  DATE
+  SELECT
+  RADIO
+  CHECKBOX
+  FILE
+}
+
+enum QuoteRequestStatus {
+  SUBMITTED
+  UNDER_REVIEW
+  QUOTE_SENT
+  CANCELLED
+}
+
+enum QuoteStatus {
+  DRAFT
+  SENT
+  APPROVED
+  CHANGES_REQUESTED
+  REJECTED
+  EXPIRED
+}
+
+enum OrderStatus {
+  AWAITING_PAYMENT
+  ASSIGNED
+  IN_PROGRESS
+  REVIEW
+  REVISION
+  FINAL_DELIVERY
+  COMPLETED
+  CANCELLED
+}
+
+enum PaymentMethod {
+  MANUAL
+  BKASH
+  NAGAD
+  SSLCOMMERZ
+  CARD
+  BANK_TRANSFER
+}
+
+enum PaymentStatus {
+  PENDING
+  SUCCESS
+  FAILED
+  REFUNDED
+}
+
+enum FileCategory {
+  CLIENT_ASSET
+  REQUIREMENT
+  DELIVERABLE
+  REVISION
+  OTHER
+}
+
+enum RevisionStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+  REJECTED
+}
+
+enum DeliveryStatus {
+  PENDING
+  SUBMITTED
+  APPROVED
+  CHANGES_REQUESTED
+}
+
+enum NotificationType {
+  QUOTE
+  PAYMENT
+  ASSIGNMENT
+  MESSAGE
+  FILE
+  REVISION
+  DELIVERY
+  ORDER
+  SYSTEM
+}

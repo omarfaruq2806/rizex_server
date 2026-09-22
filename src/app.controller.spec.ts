@@ -1,22 +1,22 @@
-import { Test, TestingModule } from '@nestjs/testing';
+import { describe, beforeEach, it, expect } from 'vitest';
 import { AppController } from './app.controller.js';
 import { AppService } from './app.service.js';
 
 describe('AppController', () => {
   let appController: AppController;
+  let appService: AppService;
 
-  beforeEach(async () => {
-    const app: TestingModule = await Test.createTestingModule({
-      controllers: [AppController],
-      providers: [AppService],
-    }).compile();
-
-    appController = app.get<AppController>(AppController);
+  beforeEach(() => {
+    appService = new AppService();
+    appController = new AppController(appService);
   });
 
   describe('root', () => {
-    it('should return "Hello World!"', () => {
-      expect(appController.getHello()).toBe('Hello World!');
+    it('should return health status', () => {
+      const health = appController.getHealth();
+      expect(health.name).toBe('RizeX API');
+      expect(health.status).toBe('operational');
+      expect(health.version).toBe('1.0.0');
     });
   });
 });

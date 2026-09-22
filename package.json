@@ -7,9 +7,10 @@
   "license": "UNLICENSED",
   "type": "module",
   "scripts": {
-    "build": "nest build",
+    "build": "prisma generate && nest build",
     "deploy": "nest deploy",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
+    "dev": "nest start --watch",
     "start": "nest start",
     "start:dev": "nest start --watch",
     "start:debug": "nest start --debug --watch",
@@ -22,10 +23,19 @@
     "test:e2e": "vitest run --config ./vitest.config.e2e.ts"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1137.0",
+    "@aws-sdk/s3-request-presigner": "^3.1137.0",
     "@nestjs/common": "^12.0.1",
+    "@nestjs/config": "^12.0.0",
     "@nestjs/core": "^12.0.1",
     "@nestjs/observe": "^0.1.8",
     "@nestjs/platform-express": "^12.0.1",
+    "@prisma/client": "^6.19.3",
+    "better-auth": "^1.7.5",
+    "class-transformer": "^0.5.1",
+    "class-validator": "^0.15.1",
+    "helmet": "^8.3.0",
+    "prisma": "^6.19.3",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1"
   },
