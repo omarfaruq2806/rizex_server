@@ -16,6 +16,7 @@ import { MessagesModule } from './messages/messages.module.js';
 import { DeliverablesModule } from './deliverables/deliverables.module.js';
 import { ReviewsModule } from './reviews/reviews.module.js';
 import { StorageModule } from './storage/storage.module.js';
+import { UsersModule } from './users/users.module.js';
 
 @Module({
   imports: [
@@ -26,6 +27,7 @@ import { StorageModule } from './storage/storage.module.js';
     }),
     PrismaModule,
     AuthModule,
+    UsersModule,
     CategoriesModule,
     ServicesModule,
     QuoteRequestsModule,
