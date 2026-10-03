@@ -252,11 +252,12 @@ export class OrdersService {
     idOrOrderNumber: string,
     currentUser: { id: string; role: UserRole },
   ) {
+    const cleanParam = idOrOrderNumber?.trim();
     const order = await this.prisma.order.findFirst({
       where: {
         OR: [
-          { id: idOrOrderNumber },
-          { orderNumber: idOrOrderNumber },
+          { id: cleanParam },
+          { orderNumber: { equals: cleanParam, mode: 'insensitive' } },
         ],
       },
       include: {

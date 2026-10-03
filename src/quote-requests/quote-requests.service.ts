@@ -34,7 +34,10 @@ export class QuoteRequestsService {
 
     // 2. Validate required fields
     const requiredFields = service.requirementFields.filter((f) => f.isRequired);
-    const providedRequirements = dto.requirements || [];
+    const providedRequirements =
+      dto.requirements && dto.requirements.length > 0
+        ? dto.requirements
+        : dto.requirementValues || [];
 
     for (const reqField of requiredFields) {
       const match = providedRequirements.find(

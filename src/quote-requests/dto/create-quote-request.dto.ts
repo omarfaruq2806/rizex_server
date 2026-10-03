@@ -12,8 +12,8 @@ export class RequirementValueItemDto {
   @IsNotEmpty({ message: 'fieldId is required' })
   fieldId: string;
 
-  @IsNotEmpty({ message: 'value is required' })
-  value: any;
+  @IsOptional()
+  value?: any;
 }
 
 export class CreateQuoteRequestDto {
@@ -34,4 +34,10 @@ export class CreateQuoteRequestDto {
   @ValidateNested({ each: true })
   @Type(() => RequirementValueItemDto)
   requirements?: RequirementValueItemDto[] = [];
+
+  @IsArray()
+  @IsOptional()
+  @ValidateNested({ each: true })
+  @Type(() => RequirementValueItemDto)
+  requirementValues?: RequirementValueItemDto[] = [];
 }

@@ -88,7 +88,7 @@ export class QuotesController {
   @Post(':id/accept')
   @HttpCode(HttpStatus.OK)
   async acceptQuote(@Param('id') id: string, @CurrentUser() user: any) {
-    return this.quotesService.acceptQuote(id, user.id);
+    return this.quotesService.acceptQuote(id, user.id, user.role);
   }
 
   /**

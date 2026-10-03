@@ -146,12 +146,23 @@ export class AssignmentsService {
 
     if (existingAssignment) {
       throw new ConflictException(
-        `Team member '${member.name}' is already assigned to this order.`,
+        `Team member '${member.name}' is already actively assigned to this order.`,
       );
     }
 
     // Step 4: Execute assignment in transaction and update order status if needed
     return this.prisma.$transaction(async (tx) => {
+      // Unassign any existing active assignments for this order
+      await tx.orderAssignment.updateMany({
+        where: {
+          orderId,
+          unassignedAt: null,
+        },
+        data: {
+          unassignedAt: new Date(),
+        },
+      });
+
       const assignment = await tx.orderAssignment.create({
         data: {
           orderId,
@@ -191,12 +202,17 @@ export class AssignmentsService {
     dto: UnassignMemberDto,
     adminId: string,
   ) {
+    const whereClause: Prisma.OrderAssignmentWhereInput = {
+      orderId,
+      unassignedAt: null,
+    };
+
+    if (dto?.memberId) {
+      whereClause.memberId = dto.memberId;
+    }
+
     const activeAssignment = await this.prisma.orderAssignment.findFirst({
-      where: {
-        orderId,
-        memberId: dto.memberId,
-        unassignedAt: null,
-      },
+      where: whereClause,
       include: {
         member: { select: { id: true, name: true } },
       },
@@ -204,7 +220,7 @@ export class AssignmentsService {
 
     if (!activeAssignment) {
       throw new NotFoundException(
-        `No active assignment found for team member with ID '${dto.memberId}' on this order.`,
+        'No active specialist assignment found on this order.',
       );
     }
 

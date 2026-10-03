@@ -246,7 +246,7 @@ export class QuotesService {
   /**
    * 5. Client accepts quote -> Converts automatically into an active Order
    */
-  async acceptQuote(id: string, clientId: string) {
+  async acceptQuote(id: string, userId: string, userRole?: UserRole) {
     const quote = await this.prisma.quote.findUnique({
       where: { id },
       include: {
@@ -263,8 +263,8 @@ export class QuotesService {
       throw new NotFoundException(`Quote with ID '${id}' was not found.`);
     }
 
-    // Verify client ownership
-    if (quote.request.clientId !== clientId) {
+    // Verify client ownership (Admin can also accept on behalf of client)
+    if (userRole !== UserRole.ADMIN && quote.request.clientId !== userId) {
       throw new ForbiddenException(
         'Access denied. You can only accept quotes addressed to you.',
       );
@@ -309,7 +309,7 @@ export class QuotesService {
       const newOrder = await tx.order.create({
         data: {
           orderNumber,
-          clientId,
+          clientId: quote.request.clientId,
           serviceId: quote.request.serviceId,
           quoteId: quote.id,
           title: orderTitle,
