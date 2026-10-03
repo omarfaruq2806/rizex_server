@@ -26,12 +26,15 @@ export class AuthService {
     }
   }
 
-  async signUp(body: {
-    email: string;
-    password: string;
-    name: string;
-    role?: UserRole;
-  }) {
+  async signUp(
+    body: {
+      email: string;
+      password: string;
+      name: string;
+      role?: UserRole;
+    },
+    headers?: Headers,
+  ) {
     const existing = await this.prisma.user.findUnique({
       where: { email: body.email.toLowerCase().trim() },
     });
@@ -41,12 +44,14 @@ export class AuthService {
     }
 
     try {
-      const result = await auth.api.signUpEmail({
+      const response = await auth.api.signUpEmail({
         body: {
           email: body.email.toLowerCase().trim(),
           password: body.password,
           name: body.name,
         },
+        headers,
+        asResponse: true,
       });
 
       // Update role if provided (default is CLIENT)
@@ -57,21 +62,26 @@ export class AuthService {
         });
       }
 
-      return result;
+      return response;
     } catch (error: any) {
       throw new BadRequestException(error.message || 'Failed to create user');
     }
   }
 
-  async signIn(body: { email: string; password: string }) {
+  async signIn(
+    body: { email: string; password: string },
+    headers?: Headers,
+  ) {
     try {
-      const result = await auth.api.signInEmail({
+      const response = await auth.api.signInEmail({
         body: {
           email: body.email.toLowerCase().trim(),
           password: body.password,
         },
+        headers,
+        asResponse: true,
       });
-      return result;
+      return response;
     } catch (error: any) {
       throw new UnauthorizedException(
         error.message || 'Invalid email or password',
@@ -83,6 +93,7 @@ export class AuthService {
     try {
       return await auth.api.signOut({
         headers,
+        asResponse: true,
       });
     } catch (error: any) {
       throw new BadRequestException(error.message || 'Failed to sign out');

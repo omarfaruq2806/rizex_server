@@ -24,19 +24,11 @@ export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
   @Post('register')
-  async register(@Body() dto: SignUpDto) {
-    return this.authService.signUp(dto);
-  }
-
-  @Post('login')
-  @HttpCode(HttpStatus.OK)
-  async login(@Body() dto: SignInDto) {
-    return this.authService.signIn(dto);
-  }
-
-  @Post('logout')
-  @HttpCode(HttpStatus.OK)
-  async logout(@Req() req: Request) {
+  async register(
+    @Body() dto: SignUpDto,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ) {
     const headers = new Headers();
     Object.entries(req.headers).forEach(([key, value]) => {
       if (value !== undefined && value !== null) {
@@ -47,7 +39,78 @@ export class AuthController {
         }
       }
     });
-    return this.authService.signOut(headers);
+
+    const authRes = await this.authService.signUp(dto, headers);
+    const setCookieHeaders = (authRes.headers as any).getSetCookie
+      ? (authRes.headers as any).getSetCookie()
+      : authRes.headers.get('set-cookie');
+
+    if (setCookieHeaders) {
+      res.setHeader('Set-Cookie', setCookieHeaders);
+    }
+
+    const data = await authRes.json();
+    return data;
+  }
+
+  @Post('login')
+  @HttpCode(HttpStatus.OK)
+  async login(
+    @Body() dto: SignInDto,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const headers = new Headers();
+    Object.entries(req.headers).forEach(([key, value]) => {
+      if (value !== undefined && value !== null) {
+        if (Array.isArray(value)) {
+          value.forEach((v) => headers.append(key, String(v)));
+        } else {
+          headers.set(key, String(value));
+        }
+      }
+    });
+
+    const authRes = await this.authService.signIn(dto, headers);
+    const setCookieHeaders = (authRes.headers as any).getSetCookie
+      ? (authRes.headers as any).getSetCookie()
+      : authRes.headers.get('set-cookie');
+
+    if (setCookieHeaders) {
+      res.setHeader('Set-Cookie', setCookieHeaders);
+    }
+
+    const data = await authRes.json();
+    return data;
+  }
+
+  @Post('logout')
+  @HttpCode(HttpStatus.OK)
+  async logout(
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const headers = new Headers();
+    Object.entries(req.headers).forEach(([key, value]) => {
+      if (value !== undefined && value !== null) {
+        if (Array.isArray(value)) {
+          value.forEach((v) => headers.append(key, String(v)));
+        } else {
+          headers.set(key, String(value));
+        }
+      }
+    });
+
+    const authRes = await this.authService.signOut(headers);
+    const setCookieHeaders = (authRes.headers as any).getSetCookie
+      ? (authRes.headers as any).getSetCookie()
+      : authRes.headers.get('set-cookie');
+
+    if (setCookieHeaders) {
+      res.setHeader('Set-Cookie', setCookieHeaders);
+    }
+
+    return { success: true, message: 'Logged out successfully' };
   }
 
   @Get('me')

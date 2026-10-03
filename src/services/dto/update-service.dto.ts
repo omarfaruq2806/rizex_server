@@ -5,9 +5,8 @@ import {
   IsInt,
   IsNumber,
   Min,
-  Matches,
 } from 'class-validator';
-import { Type } from 'class-transformer';
+import { Type, Transform } from 'class-transformer';
 
 export class UpdateServiceDto {
   @IsString()
@@ -20,8 +19,14 @@ export class UpdateServiceDto {
 
   @IsString()
   @IsOptional()
-  @Matches(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, {
-    message: 'Slug must contain only lowercase alphanumeric characters and hyphens',
+  @Transform(({ value }) => {
+    if (!value || typeof value !== 'string') return undefined;
+    const clean = value
+      .toLowerCase()
+      .trim()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/(^-|-$)+/g, '');
+    return clean || undefined;
   })
   slug?: string;
 
@@ -31,7 +36,19 @@ export class UpdateServiceDto {
 
   @IsString()
   @IsOptional()
+  shortDescription?: string;
+
+  @IsString()
+  @IsOptional()
+  fullDescription?: string;
+
+  @IsString()
+  @IsOptional()
   image?: string;
+
+  @IsString()
+  @IsOptional()
+  icon?: string;
 
   @IsBoolean()
   @IsOptional()
@@ -49,7 +66,7 @@ export class UpdateServiceDto {
   @Type(() => Boolean)
   showPrice?: boolean;
 
-  @IsNumber({ maxDecimalPlaces: 2 })
+  @IsNumber()
   @Min(0)
   @IsOptional()
   @Type(() => Number)

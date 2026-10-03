@@ -150,13 +150,16 @@ export class ServicesService {
       );
     }
 
+    const desc = dto.description || dto.fullDescription || dto.shortDescription || undefined;
+    const img = dto.image || dto.icon || undefined;
+
     return this.prisma.service.create({
       data: {
         categoryId: dto.categoryId,
         name: dto.name,
         slug,
-        description: dto.description,
-        image: dto.image,
+        description: desc,
+        image: img,
         isActive: dto.isActive ?? true,
         sortOrder: dto.sortOrder ?? 0,
         showPrice: dto.showPrice ?? false,
@@ -209,14 +212,17 @@ export class ServicesService {
       }
     }
 
+    const descVal = dto.description !== undefined ? dto.description : (dto.fullDescription !== undefined ? dto.fullDescription : dto.shortDescription);
+    const imgVal = dto.image !== undefined ? dto.image : dto.icon;
+
     return this.prisma.service.update({
       where: { id },
       data: {
         categoryId: dto.categoryId ?? service.categoryId,
         name: dto.name ?? service.name,
         slug,
-        description: dto.description !== undefined ? dto.description : service.description,
-        image: dto.image !== undefined ? dto.image : service.image,
+        description: descVal !== undefined ? descVal : service.description,
+        image: imgVal !== undefined ? imgVal : service.image,
         isActive: dto.isActive !== undefined ? dto.isActive : service.isActive,
         sortOrder: dto.sortOrder !== undefined ? dto.sortOrder : service.sortOrder,
         showPrice: dto.showPrice !== undefined ? dto.showPrice : service.showPrice,

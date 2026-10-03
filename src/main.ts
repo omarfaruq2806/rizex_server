@@ -20,7 +20,10 @@ async function bootstrap() {
 
   // CORS Setup
   app.enableCors({
-    origin: (origin, callback) => {
+    origin: (
+      origin: string | undefined,
+      callback: (err: Error | null, allow?: boolean) => void,
+    ) => {
       // Allow requests with no origin or any localhost / vercel domain
       if (
         !origin ||

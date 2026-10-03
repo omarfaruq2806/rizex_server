@@ -88,7 +88,7 @@ export class CategoriesService {
         name: dto.name,
         slug,
         description: dto.description,
-        image: dto.image,
+        image: dto.image || dto.icon || undefined,
         isActive: dto.isActive ?? true,
         sortOrder: dto.sortOrder ?? 0,
       },
@@ -119,13 +119,15 @@ export class CategoriesService {
       }
     }
 
+    const imageVal = dto.image !== undefined ? dto.image : (dto.icon !== undefined ? dto.icon : category.image);
+
     return this.prisma.serviceCategory.update({
       where: { id },
       data: {
         name: dto.name ?? category.name,
         slug,
         description: dto.description !== undefined ? dto.description : category.description,
-        image: dto.image !== undefined ? dto.image : category.image,
+        image: imageVal,
         isActive: dto.isActive !== undefined ? dto.isActive : category.isActive,
         sortOrder: dto.sortOrder !== undefined ? dto.sortOrder : category.sortOrder,
       },
