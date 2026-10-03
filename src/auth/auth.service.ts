@@ -19,7 +19,26 @@ export class AuthService {
       const session = await auth.api.getSession({
         headers,
       });
-      return session;
+      if (session && session.user) return session;
+
+      // Direct fallback: check Authorization header from database Session table
+      const authHeader = headers.get('authorization');
+      if (authHeader && authHeader.startsWith('Bearer ')) {
+        const token = authHeader.replace('Bearer ', '').trim();
+        const dbSession = await this.prisma.session.findUnique({
+          where: { token },
+          include: { user: true },
+        });
+
+        if (dbSession && dbSession.expiresAt > new Date()) {
+          return {
+            session: dbSession,
+            user: dbSession.user,
+          };
+        }
+      }
+
+      return null;
     } catch (error) {
       this.logger.debug('Failed to get session from headers', error);
       return null;

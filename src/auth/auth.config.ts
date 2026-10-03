@@ -15,6 +15,14 @@ export const auth = betterAuth({
     enabled: true,
     requireEmailVerification: false,
   },
+  advanced: {
+    useSecureCookies: process.env.NODE_ENV === 'production',
+    defaultCookieAttributes: {
+      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+      secure: process.env.NODE_ENV === 'production',
+      httpOnly: true,
+    },
+  },
   user: {
     additionalFields: {
       role: {
@@ -28,5 +36,8 @@ export const auth = betterAuth({
   trustedOrigins: [
     process.env.CLIENT_URL || 'http://localhost:3000',
     'http://localhost:3000',
+    'http://127.0.0.1:3000',
+    'https://rizex.vercel.app',
+    'https://*.vercel.app',
   ],
 });
