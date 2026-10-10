@@ -4,14 +4,18 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { NotificationsService } from '../notifications/notifications.service.js';
 import { UpdateOrderStatusDto } from './dto/update-order-status.dto.js';
 import { UpdateOrderProgressDto } from './dto/update-order-progress.dto.js';
 import { QueryOrdersDto } from './dto/query-orders.dto.js';
-import { Prisma, UserRole, OrderStatus } from '@prisma/client';
+import { Prisma, UserRole, OrderStatus, NotificationType } from '@prisma/client';
 
 @Injectable()
 export class OrdersService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly notificationsService: NotificationsService,
+  ) {}
 
   /**
    * 1. Client views their own orders with cursor-based infinite scroll
@@ -382,7 +386,7 @@ export class OrdersService {
       updateData.startDate = new Date();
     }
 
-    return this.prisma.order.update({
+    const updatedOrder = await this.prisma.order.update({
       where: { id },
       data: updateData,
       include: {
@@ -390,6 +394,18 @@ export class OrdersService {
         service: { select: { id: true, name: true, slug: true } },
       },
     });
+
+    // Notify client about order status change
+    this.notificationsService.sendNotification({
+      userId: order.clientId,
+      orderId: order.id,
+      title: `Order Status: ${dto.status.replace(/_/g, ' ')}`,
+      message: `Your project "${order.title}" (Order #${order.orderNumber}) is now ${dto.status.replace(/_/g, ' ')}.`,
+      type: NotificationType.ORDER,
+      linkUrl: `/client/orders/${order.id}`,
+    }).catch(() => {});
+
+    return updatedOrder;
   }
 
   /**
@@ -422,12 +438,24 @@ export class OrdersService {
       }
     }
 
-    return this.prisma.order.update({
+    const updated = await this.prisma.order.update({
       where: { id },
       data: {
         progress: dto.progress,
       },
     });
+
+    // Notify client about progress update
+    this.notificationsService.sendNotification({
+      userId: order.clientId,
+      orderId: order.id,
+      title: `Project Progress: ${dto.progress}%`,
+      message: `Progress on "${order.title}" has been updated to ${dto.progress}%.`,
+      type: NotificationType.ORDER,
+      linkUrl: `/client/orders/${order.id}`,
+    }).catch(() => {});
+
+    return updated;
   }
 
   /**

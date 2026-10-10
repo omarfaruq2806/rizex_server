@@ -26,6 +26,12 @@ export class AuthGuard implements CanActivate {
       }
     });
 
+    // Support authorization token passed as query param (e.g., SSE EventSource connections)
+    const queryToken = request.query?.token as string | undefined;
+    if (queryToken && !headers.has('authorization')) {
+      headers.set('authorization', `Bearer ${queryToken}`);
+    }
+
     const session = await this.authService.getSessionFromHeaders(headers);
 
     if (!session || !session.user) {

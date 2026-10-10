@@ -5,14 +5,18 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { NotificationsService } from '../notifications/notifications.service.js';
 import { CreateQuoteRequestDto } from './dto/create-quote-request.dto.js';
 import { UpdateQuoteRequestStatusDto } from './dto/update-quote-request-status.dto.js';
 import { QueryQuoteRequestsDto } from './dto/query-quote-requests.dto.js';
-import { Prisma, UserRole, QuoteRequestStatus } from '@prisma/client';
+import { Prisma, UserRole, QuoteRequestStatus, NotificationType } from '@prisma/client';
 
 @Injectable()
 export class QuoteRequestsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly notificationsService: NotificationsService,
+  ) {}
 
   /**
    * Client submits a project requirement brief & quote request
@@ -56,7 +60,7 @@ export class QuoteRequestsService {
     }
 
     // 3. Create QuoteRequest and RequirementValues in transaction
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       const quoteRequest = await tx.quoteRequest.create({
         data: {
           clientId,
@@ -86,6 +90,9 @@ export class QuoteRequestsService {
       return tx.quoteRequest.findUnique({
         where: { id: quoteRequest.id },
         include: {
+          client: {
+            select: { id: true, name: true, email: true },
+          },
           service: {
             select: {
               id: true,
@@ -101,6 +108,39 @@ export class QuoteRequestsService {
         },
       });
     });
+
+    // 4. Asynchronously notify all Platform Administrators & Client
+    if (result) {
+      const clientName = result.client?.name || 'A client';
+      const projectTitle = dto.projectName || service.name;
+
+      // Notify Client
+      this.notificationsService.sendNotification({
+        userId: clientId,
+        title: 'Quote Request Submitted',
+        message: `Your quote request for "${projectTitle}" has been received. Our team is preparing your custom quote!`,
+        type: NotificationType.QUOTE,
+        linkUrl: `/dashboard/quotes`,
+      }).catch(() => {});
+
+      // Notify all Admins
+      this.prisma.user.findMany({
+        where: { role: UserRole.ADMIN },
+        select: { id: true },
+      }).then((admins) => {
+        admins.forEach((admin) => {
+          this.notificationsService.sendNotification({
+            userId: admin.id,
+            title: 'New Quote Request Received',
+            message: `${clientName} submitted a quote request for "${projectTitle}"`,
+            type: NotificationType.QUOTE,
+            linkUrl: `/admin/quotes`,
+          }).catch(() => {});
+        });
+      }).catch(() => {});
+    }
+
+    return result;
   }
 
   /**
