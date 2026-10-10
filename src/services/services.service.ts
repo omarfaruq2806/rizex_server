@@ -3,7 +3,10 @@ import {
   NotFoundException,
   ConflictException,
   BadRequestException,
+  Inject,
 } from '@nestjs/common';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
+import type { Cache } from 'cache-manager';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { CreateServiceDto } from './dto/create-service.dto.js';
 import { UpdateServiceDto } from './dto/update-service.dto.js';
@@ -13,7 +16,24 @@ import { Prisma } from '@prisma/client';
 
 @Injectable()
 export class ServicesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Inject(CACHE_MANAGER) private readonly cacheManager: Cache,
+  ) {}
+
+  /**
+   * Helper to invalidate all service-related cache
+   */
+  private async invalidateServiceCache(slugOrId?: string) {
+    try {
+      if (slugOrId) {
+        await this.cacheManager.del(`services:single:${slugOrId}`);
+      }
+      await this.cacheManager.del('categories:public:all');
+    } catch {
+      // Ignore cache reset failure
+    }
+  }
 
   /**
    * Find all services with cursor-based infinite pagination, search, and category filters
@@ -21,6 +41,17 @@ export class ServicesService {
   async findAll(query: QueryServiceDto) {
     const limit = query.limit ?? 10;
     const { cursor, search, categoryId, categorySlug, includeInactive } = query;
+
+    // Cache key for common default queries (first page without cursor)
+    const isCacheable = !cursor && !includeInactive;
+    const cacheKey = isCacheable
+      ? `services:list:${categoryId || 'all'}:${categorySlug || 'all'}:${search || 'none'}:${limit}`
+      : null;
+
+    if (cacheKey) {
+      const cached = await this.cacheManager.get(cacheKey);
+      if (cached) return cached;
+    }
 
     const where: Prisma.ServiceWhereInput = {};
 
@@ -81,18 +112,28 @@ export class ServicesService {
     const paginatedItems = hasNextPage ? items.slice(0, limit) : items;
     const nextCursor = hasNextPage ? paginatedItems[paginatedItems.length - 1].id : null;
 
-    return {
+    const result = {
       items: paginatedItems,
       nextCursor,
       hasNextPage,
       totalCount,
     };
+
+    if (cacheKey) {
+      await this.cacheManager.set(cacheKey, result, 180000); // 3 minutes cache
+    }
+
+    return result;
   }
 
   /**
    * Find single service by ID or Slug with category and requirement fields
    */
   async findOne(idOrSlug: string) {
+    const cacheKey = `services:single:${idOrSlug}`;
+    const cached = await this.cacheManager.get(cacheKey);
+    if (cached) return cached;
+
     const service = await this.prisma.service.findFirst({
       where: {
         OR: [
@@ -119,6 +160,7 @@ export class ServicesService {
       throw new NotFoundException(`Service '${idOrSlug}' not found`);
     }
 
+    await this.cacheManager.set(cacheKey, service, 300000); // 5 minutes cache
     return service;
   }
 
@@ -153,7 +195,7 @@ export class ServicesService {
     const desc = dto.description || dto.fullDescription || dto.shortDescription || undefined;
     const img = dto.image || dto.icon || undefined;
 
-    return this.prisma.service.create({
+    const created = await this.prisma.service.create({
       data: {
         categoryId: dto.categoryId,
         name: dto.name,
@@ -176,6 +218,9 @@ export class ServicesService {
         },
       },
     });
+
+    await this.invalidateServiceCache();
+    return created;
   }
 
   /**
@@ -215,7 +260,7 @@ export class ServicesService {
     const descVal = dto.description !== undefined ? dto.description : (dto.fullDescription !== undefined ? dto.fullDescription : dto.shortDescription);
     const imgVal = dto.image !== undefined ? dto.image : dto.icon;
 
-    return this.prisma.service.update({
+    const updated = await this.prisma.service.update({
       where: { id },
       data: {
         categoryId: dto.categoryId ?? service.categoryId,
@@ -244,6 +289,9 @@ export class ServicesService {
         },
       },
     });
+
+    await this.invalidateServiceCache(service.slug);
+    return updated;
   }
 
   /**
@@ -258,7 +306,7 @@ export class ServicesService {
       throw new NotFoundException(`Service with ID '${id}' not found`);
     }
 
-    return this.prisma.service.update({
+    const updated = await this.prisma.service.update({
       where: { id },
       data: {
         isActive: !service.isActive,
@@ -273,6 +321,9 @@ export class ServicesService {
         },
       },
     });
+
+    await this.invalidateServiceCache(service.slug);
+    return updated;
   }
 
   /**
@@ -306,9 +357,12 @@ export class ServicesService {
       );
     }
 
-    return this.prisma.service.delete({
+    const deleted = await this.prisma.service.delete({
       where: { id },
     });
+
+    await this.invalidateServiceCache(service.slug);
+    return deleted;
   }
 
   // ========================================================

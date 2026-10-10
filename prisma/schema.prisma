@@ -39,6 +39,9 @@ model User {
 
   createdQuotes  Quote[]           @relation("CreatedQuotes")
   assignedBy     OrderAssignment[] @relation("AssignedBy")
+
+  @@index([role])
+  @@index([createdAt])
 }
 
 model Session {
@@ -54,6 +57,7 @@ model Session {
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
+  @@index([expiresAt])
 }
 
 model Account {
@@ -104,6 +108,8 @@ model ServiceCategory {
   updatedAt   DateTime @updatedAt
 
   services    Service[]
+
+  @@index([isActive, sortOrder])
 }
 
 model Service {
@@ -134,6 +140,7 @@ model Service {
 
   @@index([categoryId])
   @@index([isActive])
+  @@index([isActive, sortOrder])
 }
 
 // ==============================
@@ -211,6 +218,8 @@ model QuoteRequest {
   @@index([clientId])
   @@index([serviceId])
   @@index([status])
+  @@index([clientId, status])
+  @@index([createdAt])
 }
 
 // ==============================
@@ -245,6 +254,9 @@ model Quote {
   order         Order?
 
   @@index([status])
+  @@index([createdById])
+  @@index([status, createdAt])
+  @@index([createdAt])
 }
 
 // ==============================
@@ -287,6 +299,9 @@ model Order {
   @@index([clientId])
   @@index([status])
   @@index([serviceId])
+  @@index([clientId, status])
+  @@index([status, createdAt])
+  @@index([createdAt])
 }
 
 // ==============================
@@ -315,6 +330,8 @@ model Payment {
   @@index([orderId])
   @@index([clientId])
   @@index([status])
+  @@index([clientId, status])
+  @@index([createdAt])
 }
 
 // ==============================
@@ -336,6 +353,7 @@ model OrderAssignment {
 
   @@index([orderId])
   @@index([memberId])
+  @@index([memberId, unassignedAt])
 }
 
 // ==============================
@@ -356,6 +374,7 @@ model Message {
   sender    User     @relation(fields: [senderId], references: [id], onDelete: Restrict)
 
   @@index([orderId, createdAt])
+  @@index([senderId])
 }
 
 // ==============================
@@ -381,6 +400,8 @@ model ProjectFile {
   uploader   User         @relation(fields: [uploaderId], references: [id], onDelete: Restrict)
 
   @@index([orderId])
+  @@index([orderId, category])
+  @@index([uploaderId])
 }
 
 // ==============================
@@ -405,6 +426,8 @@ model Revision {
   client      User           @relation(fields: [clientId], references: [id], onDelete: Restrict)
 
   @@index([orderId])
+  @@index([orderId, status])
+  @@index([clientId])
 }
 
 // ==============================
@@ -443,6 +466,9 @@ model Review {
 
   order       Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
   client      User     @relation(fields: [clientId], references: [id], onDelete: Restrict)
+
+  @@index([isPublished, rating])
+  @@index([clientId])
 }
 
 // ==============================
@@ -466,6 +492,7 @@ model Notification {
   order     Order?           @relation(fields: [orderId], references: [id], onDelete: Cascade)
 
   @@index([userId, isRead])
+  @@index([userId, createdAt])
 }
 
 // ==============================

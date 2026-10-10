@@ -7,21 +7,24 @@ export class RequestLoggerMiddleware implements NestMiddleware {
 
   use(req: Request, res: Response, next: NextFunction): void {
     const { method, originalUrl, ip } = req;
-    const userAgent = req.get('user-agent') || '';
+    const userAgent = req.get('user-agent') || 'unknown';
     const startTime = Date.now();
+
+    // Skip high-frequency health check noise in info logs
+    const isHealthCheck = originalUrl.includes('/health') || originalUrl.includes('/ping');
 
     res.on('finish', () => {
       const { statusCode } = res;
-      const contentLength = res.get('content-length') || 0;
+      const contentLength = res.get('content-length') || '0';
       const duration = Date.now() - startTime;
 
-      const logMessage = `${method} ${originalUrl} ${statusCode} - ${duration}ms [${ip}] ${userAgent} - ${contentLength}b`;
+      const logMessage = `[${method}] ${originalUrl} -> ${statusCode} (${duration}ms) | IP: ${ip} | Size: ${contentLength}b`;
 
       if (statusCode >= 500) {
         this.logger.error(logMessage);
       } else if (statusCode >= 400) {
         this.logger.warn(logMessage);
-      } else {
+      } else if (!isHealthCheck) {
         this.logger.log(logMessage);
       }
     });
@@ -29,3 +32,4 @@ export class RequestLoggerMiddleware implements NestMiddleware {
     next();
   }
 }
+

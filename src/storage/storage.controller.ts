@@ -10,6 +10,7 @@ import {
   HttpCode,
   HttpStatus,
 } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { StorageService } from './storage.service.js';
 import { GetUploadUrlDto } from './dto/get-upload-url.dto.js';
 import { AttachOrderFileDto } from './dto/attach-file.dto.js';
@@ -24,8 +25,10 @@ export class StorageController {
 
   /**
    * 1. Get secure Presigned PUT Upload URL for direct client-to-R2 upload
+   * Rate limited: Max 20 upload tokens requested per minute
    */
   @Post('upload-url')
+  @Throttle({ default: { limit: 20, ttl: 60000 } })
   @HttpCode(HttpStatus.OK)
   async getUploadPresignedUrl(
     @Body() dto: GetUploadUrlDto,

@@ -14,7 +14,12 @@ import {
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { PrismaService } from '../prisma/prisma.service.js';
-import { GetUploadUrlDto, UploadContext } from './dto/get-upload-url.dto.js';
+import {
+  GetUploadUrlDto,
+  UploadContext,
+  ALLOWED_MIME_TYPES,
+  DANGEROUS_EXTENSIONS,
+} from './dto/get-upload-url.dto.js';
 import { AttachOrderFileDto } from './dto/attach-file.dto.js';
 import { UserRole, FileCategory, Prisma } from '@prisma/client';
 import crypto from 'crypto';
@@ -62,6 +67,28 @@ export class StorageService {
     user: { id: string; role: UserRole },
     dto: GetUploadUrlDto,
   ) {
+    // 1. Security Check: Validate MIME type against whitelist
+    const normalizedMime = (dto.contentType || '').toLowerCase().trim();
+    if (!ALLOWED_MIME_TYPES.includes(normalizedMime)) {
+      throw new BadRequestException(
+        `File type '${dto.contentType}' is not permitted. Allowed types include images, PDFs, office documents, and standard media/archives.`,
+      );
+    }
+
+    // 2. Security Check: Block dangerous executable file extensions
+    const lowerName = (dto.fileName || '').toLowerCase().trim();
+    const hasDangerousExt = DANGEROUS_EXTENSIONS.some((ext) => lowerName.endsWith(ext));
+    if (hasDangerousExt) {
+      throw new BadRequestException(
+        'This file extension is blocked for system security reasons.',
+      );
+    }
+
+    // 3. Security Check: Avatar specific size limit (Max 5MB for avatars)
+    if (dto.context === UploadContext.AVATAR && dto.fileSize && dto.fileSize > 5 * 1024 * 1024) {
+      throw new BadRequestException('Avatar images cannot exceed 5MB in size.');
+    }
+
     // Verify order access if orderId is provided
     if (dto.orderId) {
       const order = await this.prisma.order.findUnique({

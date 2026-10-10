@@ -10,6 +10,7 @@ import {
   HttpCode,
   HttpStatus,
 } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import type { Request, Response } from 'express';
 import { toNodeHandler } from 'better-auth/node';
 import { AuthService } from './auth.service.js';
@@ -23,7 +24,11 @@ import { auth } from './auth.config.js';
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
+  /**
+   * Rate limited: Max 5 registration attempts per minute per IP address
+   */
   @Post('register')
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
   async register(
     @Body() dto: SignUpDto,
     @Req() req: Request,
@@ -53,7 +58,11 @@ export class AuthController {
     return data;
   }
 
+  /**
+   * Rate limited: Max 5 login attempts per minute per IP address (brute-force defense)
+   */
   @Post('login')
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
   @HttpCode(HttpStatus.OK)
   async login(
     @Body() dto: SignInDto,

@@ -10,6 +10,7 @@ import {
   HttpCode,
   HttpStatus,
 } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { UserRole } from '@prisma/client';
 import { QuoteRequestsService } from './quote-requests.service.js';
 import { CreateQuoteRequestDto } from './dto/create-quote-request.dto.js';
@@ -26,9 +27,10 @@ export class QuoteRequestsController {
   constructor(private readonly quoteRequestsService: QuoteRequestsService) {}
 
   /**
-   * Client submits requirement brief
+   * Client submits requirement brief (Rate limited: Max 10 requests per minute)
    */
   @Post()
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
   @HttpCode(HttpStatus.CREATED)
   async create(
     @CurrentUser() user: any,

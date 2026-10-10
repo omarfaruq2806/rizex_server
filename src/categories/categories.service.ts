@@ -3,7 +3,10 @@ import {
   NotFoundException,
   ConflictException,
   BadRequestException,
+  Inject,
 } from '@nestjs/common';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
+import type { Cache } from 'cache-manager';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { CreateCategoryDto } from './dto/create-category.dto.js';
 import { UpdateCategoryDto } from './dto/update-category.dto.js';
@@ -12,15 +15,26 @@ import { slugify } from '../common/utils/slug.util.js';
 
 @Injectable()
 export class CategoriesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Inject(CACHE_MANAGER) private readonly cacheManager: Cache,
+  ) {}
 
   async findAll(query?: QueryCategoryDto) {
+    const isPublicDefault = !query?.includeInactive;
+    const cacheKey = isPublicDefault ? 'categories:public:all' : null;
+
+    if (cacheKey) {
+      const cached = await this.cacheManager.get(cacheKey);
+      if (cached) return cached;
+    }
+
     const where: any = {};
     if (!query?.includeInactive) {
       where.isActive = true;
     }
 
-    return this.prisma.serviceCategory.findMany({
+    const categories = await this.prisma.serviceCategory.findMany({
       where,
       include: {
         _count: {
@@ -36,6 +50,12 @@ export class CategoriesService {
         { createdAt: 'asc' },
       ],
     });
+
+    if (cacheKey) {
+      await this.cacheManager.set(cacheKey, categories, 300000); // 5 minutes cache
+    }
+
+    return categories;
   }
 
   async findOne(idOrSlug: string) {
@@ -83,7 +103,7 @@ export class CategoriesService {
       );
     }
 
-    return this.prisma.serviceCategory.create({
+    const created = await this.prisma.serviceCategory.create({
       data: {
         name: dto.name,
         slug,
@@ -93,6 +113,9 @@ export class CategoriesService {
         sortOrder: dto.sortOrder ?? 0,
       },
     });
+
+    await this.cacheManager.del('categories:public:all');
+    return created;
   }
 
   async update(id: string, dto: UpdateCategoryDto) {
@@ -121,7 +144,7 @@ export class CategoriesService {
 
     const imageVal = dto.image !== undefined ? dto.image : (dto.icon !== undefined ? dto.icon : category.image);
 
-    return this.prisma.serviceCategory.update({
+    const updated = await this.prisma.serviceCategory.update({
       where: { id },
       data: {
         name: dto.name ?? category.name,
@@ -132,6 +155,9 @@ export class CategoriesService {
         sortOrder: dto.sortOrder !== undefined ? dto.sortOrder : category.sortOrder,
       },
     });
+
+    await this.cacheManager.del('categories:public:all');
+    return updated;
   }
 
   async remove(id: string) {
@@ -154,8 +180,11 @@ export class CategoriesService {
       );
     }
 
-    return this.prisma.serviceCategory.delete({
+    const deleted = await this.prisma.serviceCategory.delete({
       where: { id },
     });
+
+    await this.cacheManager.del('categories:public:all');
+    return deleted;
   }
 }

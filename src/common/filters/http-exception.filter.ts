@@ -7,6 +7,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
+import { captureException } from '../utils/sentry.util.js';
 
 @Catch()
 export class AllExceptionsFilter implements ExceptionFilter {
@@ -43,9 +44,17 @@ export class AllExceptionsFilter implements ExceptionFilter {
     } else if (exception instanceof Error) {
       message = exception.message;
       this.logger.error(
-        `Unhandled Exception: ${exception.message}`,
+        `Unhandled Exception on [${request.method}] ${request.url}: ${exception.message}`,
         exception.stack,
       );
+
+      // Report unexpected 500 crashes to Sentry
+      captureException(exception, {
+        url: request.url,
+        method: request.method,
+        ip: request.ip,
+        userAgent: request.headers['user-agent'],
+      });
     } else {
       this.logger.error('Unhandled Unknown Exception', exception);
     }
@@ -60,3 +69,4 @@ export class AllExceptionsFilter implements ExceptionFilter {
     });
   }
 }
+

@@ -8,10 +8,22 @@ export class PrismaService
 {
   private readonly logger = new Logger(PrismaService.name);
 
+  constructor() {
+    super({
+      log:
+        process.env.NODE_ENV === 'development'
+          ? [
+              { emit: 'event', level: 'warn' },
+              { emit: 'event', level: 'error' },
+            ]
+          : [{ emit: 'event', level: 'error' }],
+    });
+  }
+
   async onModuleInit() {
     try {
       await this.$connect();
-      this.logger.log('Connected to PostgreSQL database via Prisma');
+      this.logger.log('Connected to PostgreSQL database with connection pooling enabled');
     } catch (error) {
       this.logger.error('Failed to connect to database', error);
     }
@@ -22,3 +34,4 @@ export class PrismaService
     this.logger.log('Disconnected from PostgreSQL database');
   }
 }
+
