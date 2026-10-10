@@ -5,6 +5,7 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { NotificationsService } from '../notifications/notifications.service.js';
 import { SubmitDeliveryDto } from './dto/submit-delivery.dto.js';
 import { RequestRevisionDto } from './dto/request-revision.dto.js';
 import { UploadFileMetadataDto } from './dto/upload-file-metadata.dto.js';
@@ -14,12 +15,16 @@ import {
   DeliveryStatus,
   RevisionStatus,
   FileCategory,
+  NotificationType,
   Prisma,
 } from '@prisma/client';
 
 @Injectable()
 export class DeliverablesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly notificationsService: NotificationsService,
+  ) {}
 
   /**
    * 1. Team Member or Admin submits work deliverables for client review
@@ -91,6 +96,16 @@ export class DeliverablesService {
         });
       }
 
+      // Notify Client about submitted deliverables
+      this.notificationsService.sendNotification({
+        userId: order.clientId,
+        orderId,
+        title: 'Work Deliverables Ready for Review',
+        message: `New deliverables have been submitted for order #${order.orderNumber}. Please review.`,
+        type: NotificationType.DELIVERY,
+        linkUrl: `/client/orders/${orderId}`,
+      }).catch(() => {});
+
       return {
         message: 'Deliverables successfully submitted for client review.',
         delivery,
@@ -104,7 +119,10 @@ export class DeliverablesService {
   async approveDelivery(orderId: string, clientId: string) {
     const order = await this.prisma.order.findUnique({
       where: { id: orderId },
-      include: { delivery: true },
+      include: {
+        delivery: true,
+        assignments: { where: { unassignedAt: null } },
+      },
     });
 
     if (!order) {
@@ -141,6 +159,18 @@ export class DeliverablesService {
         },
       });
 
+      // Notify assigned team members
+      order.assignments.forEach((assignment) => {
+        this.notificationsService.sendNotification({
+          userId: assignment.memberId,
+          orderId,
+          title: 'Delivery Approved! Project Completed',
+          message: `Client approved the delivery for order #${order.orderNumber}. Great job!`,
+          type: NotificationType.ORDER,
+          linkUrl: `/worker/orders/${orderId}`,
+        }).catch(() => {});
+      });
+
       return {
         message: 'Delivery approved! Project is now marked as Completed.',
         delivery: approvedDelivery,
@@ -163,6 +193,7 @@ export class DeliverablesService {
         quote: true,
         revisions: true,
         delivery: true,
+        assignments: { where: { unassignedAt: null } },
       },
     });
 
@@ -221,6 +252,18 @@ export class DeliverablesService {
           },
         });
       }
+
+      // Notify assigned team members about revision request
+      order.assignments.forEach((assignment) => {
+        this.notificationsService.sendNotification({
+          userId: assignment.memberId,
+          orderId,
+          title: 'Revision Requested by Client',
+          message: `Revision requested on order #${order.orderNumber}: ${dto.reason}`,
+          type: NotificationType.REVISION,
+          linkUrl: `/worker/orders/${orderId}`,
+        }).catch(() => {});
+      });
 
       return {
         message: 'Revision request successfully submitted.',

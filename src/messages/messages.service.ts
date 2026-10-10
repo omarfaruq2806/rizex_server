@@ -4,13 +4,17 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { NotificationsService } from '../notifications/notifications.service.js';
 import { SendMessageDto } from './dto/send-message.dto.js';
 import { QueryMessagesDto } from './dto/query-messages.dto.js';
-import { Prisma, UserRole } from '@prisma/client';
+import { Prisma, UserRole, NotificationType } from '@prisma/client';
 
 @Injectable()
 export class MessagesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly notificationsService: NotificationsService,
+  ) {}
 
   /**
    * 1. Send a message in an Order chat room
@@ -52,7 +56,7 @@ export class MessagesService {
     // Note: ADMIN has universal permission to send message in any order room
 
     // Step 3: Create and return the message with sender information
-    return this.prisma.message.create({
+    const message = await this.prisma.message.create({
       data: {
         orderId,
         senderId: sender.id,
@@ -70,6 +74,36 @@ export class MessagesService {
         },
       },
     });
+
+    // Step 4: Notify recipients (if sender is not the client, notify client; if sender is client, notify assigned workers)
+    const senderName = message.sender?.name || 'Someone';
+    const preview = dto.content.length > 60 ? `${dto.content.slice(0, 60)}...` : dto.content;
+
+    if (sender.id !== order.clientId) {
+      this.notificationsService.sendNotification({
+        userId: order.clientId,
+        orderId,
+        title: `New message from ${senderName}`,
+        message: preview,
+        type: NotificationType.MESSAGE,
+        linkUrl: `/client/orders/${orderId}`,
+      }).catch(() => {});
+    }
+
+    if (sender.role === UserRole.CLIENT) {
+      order.assignments.forEach((assignment) => {
+        this.notificationsService.sendNotification({
+          userId: assignment.memberId,
+          orderId,
+          title: `New message from ${senderName}`,
+          message: preview,
+          type: NotificationType.MESSAGE,
+          linkUrl: `/worker/orders/${orderId}`,
+        }).catch(() => {});
+      });
+    }
+
+    return message;
   }
 
   /**

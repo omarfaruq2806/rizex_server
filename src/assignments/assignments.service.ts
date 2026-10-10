@@ -6,14 +6,18 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { NotificationsService } from '../notifications/notifications.service.js';
 import { AssignMemberDto } from './dto/assign-member.dto.js';
 import { UnassignMemberDto } from './dto/unassign-member.dto.js';
 import { QueryTeamMembersDto } from './dto/query-team.dto.js';
-import { Prisma, UserRole, OrderStatus } from '@prisma/client';
+import { Prisma, UserRole, OrderStatus, NotificationType } from '@prisma/client';
 
 @Injectable()
 export class AssignmentsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly notificationsService: NotificationsService,
+  ) {}
 
   /**
    * 1. Admin views all available Team Members & their active project workload
@@ -187,10 +191,22 @@ export class AssignmentsService {
         });
       }
 
-      return {
+      const result = {
         message: `Team member '${member.name}' successfully assigned to order #${order.orderNumber}.`,
         assignment,
       };
+
+      // Notify the assigned member asynchronously
+      this.notificationsService.sendNotification({
+        userId: dto.memberId,
+        orderId,
+        title: 'New Project Assignment',
+        message: `You have been assigned to order #${order.orderNumber} (${order.title})`,
+        type: NotificationType.ASSIGNMENT,
+        linkUrl: `/worker/orders/${orderId}`,
+      }).catch(() => {});
+
+      return result;
     });
   }
 

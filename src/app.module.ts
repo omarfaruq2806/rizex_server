@@ -21,6 +21,7 @@ import { ReviewsModule } from './reviews/reviews.module.js';
 import { StorageModule } from './storage/storage.module.js';
 import { UsersModule } from './users/users.module.js';
 import { HealthModule } from './health/health.module.js';
+import { NotificationsModule } from './notifications/notifications.module.js';
 
 @Module({
   imports: [
@@ -52,6 +53,7 @@ import { HealthModule } from './health/health.module.js';
     // 4. Application Feature Modules & Health Probes
     HealthModule,
     PrismaModule,
+    NotificationsModule,
     AuthModule,
     UsersModule,
     CategoriesModule,

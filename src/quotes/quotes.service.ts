@@ -6,6 +6,7 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { NotificationsService } from '../notifications/notifications.service.js';
 import { CreateQuoteDto } from './dto/create-quote.dto.js';
 import { UpdateQuoteDto } from './dto/update-quote.dto.js';
 import { RequestQuoteChangesDto } from './dto/request-changes.dto.js';
@@ -17,11 +18,15 @@ import {
   QuoteStatus,
   QuoteRequestStatus,
   OrderStatus,
+  NotificationType,
 } from '@prisma/client';
 
 @Injectable()
 export class QuotesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly notificationsService: NotificationsService,
+  ) {}
 
   /**
    * 1. Admin creates a custom quote for a client's requirement brief
@@ -92,6 +97,15 @@ export class QuotesService {
           where: { id: dto.requestId },
           data: { status: QuoteRequestStatus.QUOTE_SENT },
         });
+
+        // Notify client
+        this.notificationsService.sendNotification({
+          userId: quoteRequest.clientId,
+          title: 'New Custom Quote Received',
+          message: `You received a custom quote of ${quote.currency} ${quote.amount} for your project.`,
+          type: NotificationType.QUOTE,
+          linkUrl: `/client/quotes/${quote.id}`,
+        }).catch(() => {});
       } else {
         await tx.quoteRequest.update({
           where: { id: dto.requestId },
@@ -187,6 +201,15 @@ export class QuotesService {
         where: { id: quote.requestId },
         data: { status: QuoteRequestStatus.QUOTE_SENT },
       });
+
+      // Notify client
+      this.notificationsService.sendNotification({
+        userId: updatedQuote.request.clientId,
+        title: 'New Custom Quote Received',
+        message: `You received a custom quote of ${updatedQuote.currency} ${updatedQuote.amount} for your project.`,
+        type: NotificationType.QUOTE,
+        linkUrl: `/client/quotes/${updatedQuote.id}`,
+      }).catch(() => {});
 
       return updatedQuote;
     });
@@ -327,6 +350,16 @@ export class QuotesService {
           },
         },
       });
+
+      // Notify Admin who created the quote
+      this.notificationsService.sendNotification({
+        userId: quote.createdById,
+        orderId: newOrder.id,
+        title: 'Quote Accepted by Client!',
+        message: `Client accepted quote for "${orderTitle}". Order #${newOrder.orderNumber} is now active.`,
+        type: NotificationType.ORDER,
+        linkUrl: `/admin/orders/${newOrder.id}`,
+      }).catch(() => {});
 
       return {
         message: 'Quote successfully accepted! Order has been generated.',
