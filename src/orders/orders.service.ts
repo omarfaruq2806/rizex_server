@@ -2,13 +2,26 @@ import {
   Injectable,
   NotFoundException,
   ForbiddenException,
+  BadRequestException,
+  ConflictException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
+import { CreateOrderDto } from './dto/create-order.dto.js';
+import { UpdateOrderPaymentDto } from './dto/update-order-payment.dto.js';
 import { UpdateOrderStatusDto } from './dto/update-order-status.dto.js';
 import { UpdateOrderProgressDto } from './dto/update-order-progress.dto.js';
 import { QueryOrdersDto } from './dto/query-orders.dto.js';
-import { Prisma, UserRole, OrderStatus, NotificationType } from '@prisma/client';
+import { generateOrderNumber } from '../common/utils/order-number.util.js';
+import {
+  Prisma,
+  UserRole,
+  OrderStatus,
+  QuoteRequestStatus,
+  PaymentStatus,
+  PaymentMethod,
+  NotificationType,
+} from '@prisma/client';
 
 @Injectable()
 export class OrdersService {
@@ -490,5 +503,184 @@ export class OrdersService {
       completed,
       cancelled,
     };
+  }
+
+  /**
+   * 8. Admin directly creates an Order (with client auto-linking / on-the-fly creation)
+   */
+  async createOrder(dto: CreateOrderDto) {
+    // 0. Prevent duplicate order creation if inquiryId is provided
+    if (dto.inquiryId) {
+      const inquiry = await this.prisma.quoteRequest.findUnique({
+        where: { id: dto.inquiryId },
+      });
+
+      if (
+        inquiry &&
+        ((inquiry.status as string) === 'ORDER_CREATED' ||
+          (inquiry.status as string) === 'CONVERTED')
+      ) {
+        throw new ConflictException(
+          'An official order has already been created from this inquiry. Duplicate order creation is prevented.',
+        );
+      }
+    }
+
+    // 1. Resolve client
+    let finalClientId = dto.clientId;
+
+    if (!finalClientId) {
+      if (!dto.clientEmail) {
+        throw new BadRequestException('Either clientId or clientEmail must be provided');
+      }
+
+      // Check if user with this email already exists
+      let existingUser = await this.prisma.user.findUnique({
+        where: { email: dto.clientEmail.toLowerCase().trim() },
+      });
+
+      if (!existingUser) {
+        // Create client user record on-the-fly
+        existingUser = await this.prisma.user.create({
+          data: {
+            email: dto.clientEmail.toLowerCase().trim(),
+            name: dto.clientName?.trim() || 'Client',
+            role: UserRole.CLIENT,
+          },
+        });
+      }
+
+      finalClientId = existingUser.id;
+    }
+
+    // 2. Validate service exists
+    const service = await this.prisma.service.findUnique({
+      where: { id: dto.serviceId },
+    });
+
+    if (!service) {
+      throw new NotFoundException(`Service '${dto.serviceId}' not found`);
+    }
+
+    // 3. Calculate initial payment status
+    const totalAmount = new Prisma.Decimal(dto.totalAmount);
+    const paidAmount = new Prisma.Decimal(dto.paidAmount || 0);
+
+    let paymentStatus = dto.paymentStatus;
+    if (!paymentStatus) {
+      if (paidAmount.gte(totalAmount) && totalAmount.gt(0)) {
+        paymentStatus = PaymentStatus.PAID;
+      } else if (paidAmount.gt(0)) {
+        paymentStatus = PaymentStatus.PARTIALLY_PAID;
+      } else {
+        paymentStatus = PaymentStatus.UNPAID;
+      }
+    }
+
+    // 4. Generate Order Number
+    const orderNumber = generateOrderNumber();
+
+    const order = await this.prisma.order.create({
+      data: {
+        orderNumber,
+        clientId: finalClientId,
+        serviceId: dto.serviceId,
+        quoteId: dto.quoteId || undefined,
+        title: dto.title.trim(),
+        totalAmount,
+        paidAmount,
+        paymentStatus,
+        status: dto.status || OrderStatus.CONFIRMED,
+        expectedDelivery: dto.expectedDelivery ? new Date(dto.expectedDelivery) : undefined,
+        deliveryUrl: dto.deliveryUrl?.trim() || undefined,
+        notes: dto.notes?.trim() || undefined,
+      },
+      include: {
+        client: {
+          select: { id: true, name: true, email: true },
+        },
+        service: {
+          select: { id: true, name: true, slug: true },
+        },
+      },
+    });
+
+    // If initial payment was provided, record a Payment log
+    if (dto.paidAmount && dto.paidAmount > 0) {
+      await this.prisma.payment.create({
+        data: {
+          orderId: order.id,
+          clientId: finalClientId,
+          amount: paidAmount,
+          currency: 'BDT',
+          method: PaymentMethod.MANUAL,
+          status: PaymentStatus.SUCCESS,
+        },
+      }).catch(() => {});
+    }
+
+    // If order was created from an inquiry, mark inquiry as ORDER_CREATED to avoid duplicates
+    if (dto.inquiryId) {
+      await this.prisma.quoteRequest.update({
+        where: { id: dto.inquiryId },
+        data: { status: 'ORDER_CREATED' as any },
+      }).catch(() => {});
+    }
+
+    return order;
+  }
+
+  /**
+   * 9. Admin updates manual payment for an Order
+   */
+  async updatePayment(orderId: string, dto: UpdateOrderPaymentDto) {
+    const order = await this.prisma.order.findUnique({
+      where: { id: orderId },
+    });
+
+    if (!order) {
+      throw new NotFoundException(`Order '${orderId}' not found`);
+    }
+
+    const paidAmount = new Prisma.Decimal(dto.paidAmount);
+    const totalAmount = order.totalAmount;
+
+    let paymentStatus: PaymentStatus = PaymentStatus.UNPAID;
+    if (paidAmount.gte(totalAmount) && totalAmount.gt(0)) {
+      paymentStatus = PaymentStatus.PAID;
+    } else if (paidAmount.gt(0)) {
+      paymentStatus = PaymentStatus.PARTIALLY_PAID;
+    }
+
+    const updated = await this.prisma.order.update({
+      where: { id: orderId },
+      data: {
+        paidAmount,
+        paymentStatus,
+      },
+      include: {
+        client: {
+          select: { id: true, name: true, email: true },
+        },
+        service: {
+          select: { id: true, name: true },
+        },
+      },
+    });
+
+    // Record audit payment history
+    await this.prisma.payment.create({
+      data: {
+        orderId,
+        clientId: order.clientId,
+        amount: paidAmount,
+        currency: order.currency,
+        method: dto.method || PaymentMethod.MANUAL,
+        status: PaymentStatus.SUCCESS,
+        transactionId: dto.transactionId?.trim() || undefined,
+      },
+    }).catch(() => {});
+
+    return updated;
   }
 }

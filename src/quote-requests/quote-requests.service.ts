@@ -19,9 +19,9 @@ export class QuoteRequestsService {
   ) {}
 
   /**
-   * Client submits a project requirement brief & quote request
+   * Client or Guest submits a project requirement brief & quote request
    */
-  async create(clientId: string, dto: CreateQuoteRequestDto) {
+  async create(clientId: string | null, dto: CreateQuoteRequestDto) {
     // 1. Validate service
     const service = await this.prisma.service.findUnique({
       where: { id: dto.serviceId },
@@ -36,26 +36,29 @@ export class QuoteRequestsService {
       throw new NotFoundException('Service not found or is currently inactive');
     }
 
-    // 2. Validate required fields
-    const requiredFields = service.requirementFields.filter((f) => f.isRequired);
+    const isGuest = !clientId;
     const providedRequirements =
       dto.requirements && dto.requirements.length > 0
         ? dto.requirements
         : dto.requirementValues || [];
 
-    for (const reqField of requiredFields) {
-      const match = providedRequirements.find(
-        (r) =>
-          r.fieldId === reqField.id &&
-          r.value !== undefined &&
-          r.value !== null &&
-          r.value !== '',
-      );
-
-      if (!match) {
-        throw new BadRequestException(
-          `Required field '${reqField.label}' is missing.`,
+    // 2. Validate required fields ONLY if dynamic requirements are being used
+    if (providedRequirements.length > 0) {
+      const requiredFields = service.requirementFields.filter((f) => f.isRequired);
+      for (const reqField of requiredFields) {
+        const match = providedRequirements.find(
+          (r) =>
+            r.fieldId === reqField.id &&
+            r.value !== undefined &&
+            r.value !== null &&
+            r.value !== '',
         );
+
+        if (!match) {
+          throw new BadRequestException(
+            `Required field '${reqField.label}' is missing.`,
+          );
+        }
       }
     }
 
@@ -63,28 +66,35 @@ export class QuoteRequestsService {
     const result = await this.prisma.$transaction(async (tx) => {
       const quoteRequest = await tx.quoteRequest.create({
         data: {
-          clientId,
+          clientId: clientId || undefined,
           serviceId: dto.serviceId,
-          projectName: dto.projectName,
+          projectName: dto.projectName || (dto.guestName ? `${dto.guestName}'s Project` : service.name),
           description: dto.description,
+          isGuest,
+          guestName: dto.guestName || undefined,
+          guestEmail: dto.guestEmail || undefined,
+          guestPhone: dto.guestPhone || undefined,
+          budget: dto.budget || undefined,
           status: QuoteRequestStatus.SUBMITTED,
         },
       });
 
       // Filter valid requirements mapped to fields in this service
-      const validFieldIds = new Set(service.requirementFields.map((f) => f.id));
-      const valuesToInsert = providedRequirements
-        .filter((r) => validFieldIds.has(r.fieldId))
-        .map((r) => ({
-          fieldId: r.fieldId,
-          requestId: quoteRequest.id,
-          value: r.value as Prisma.InputJsonValue,
-        }));
+      if (providedRequirements.length > 0) {
+        const validFieldIds = new Set(service.requirementFields.map((f) => f.id));
+        const valuesToInsert = providedRequirements
+          .filter((r) => validFieldIds.has(r.fieldId))
+          .map((r) => ({
+            fieldId: r.fieldId,
+            requestId: quoteRequest.id,
+            value: r.value as Prisma.InputJsonValue,
+          }));
 
-      if (valuesToInsert.length > 0) {
-        await tx.requirementValue.createMany({
-          data: valuesToInsert,
-        });
+        if (valuesToInsert.length > 0) {
+          await tx.requirementValue.createMany({
+            data: valuesToInsert,
+          });
+        }
       }
 
       return tx.quoteRequest.findUnique({
@@ -111,17 +121,21 @@ export class QuoteRequestsService {
 
     // 4. Asynchronously notify all Platform Administrators & Client
     if (result) {
-      const clientName = result.client?.name || 'A client';
+      const clientName = isGuest
+        ? `${dto.guestName || 'Website Guest'} (Without Login)`
+        : result.client?.name || 'A client';
       const projectTitle = dto.projectName || service.name;
 
-      // Notify Client
-      this.notificationsService.sendNotification({
-        userId: clientId,
-        title: 'Quote Request Submitted',
-        message: `Your quote request for "${projectTitle}" has been received. Our team is preparing your custom quote!`,
-        type: NotificationType.QUOTE,
-        linkUrl: `/dashboard/quotes`,
-      }).catch(() => {});
+      // Notify Client if registered
+      if (clientId) {
+        this.notificationsService.sendNotification({
+          userId: clientId,
+          title: 'Quote Request Submitted',
+          message: `Your quote request for "${projectTitle}" has been received. Our team is preparing your custom quote!`,
+          type: NotificationType.QUOTE,
+          linkUrl: `/dashboard/quotes`,
+        }).catch(() => {});
+      }
 
       // Notify all Admins
       this.prisma.user.findMany({
@@ -131,8 +145,8 @@ export class QuoteRequestsService {
         admins.forEach((admin) => {
           this.notificationsService.sendNotification({
             userId: admin.id,
-            title: 'New Quote Request Received',
-            message: `${clientName} submitted a quote request for "${projectTitle}"`,
+            title: isGuest ? 'New Website Lead (Guest)' : 'New Quote Request Received',
+            message: `${clientName} submitted an inquiry for "${projectTitle}"`,
             type: NotificationType.QUOTE,
             linkUrl: `/admin/quotes`,
           }).catch(() => {});
@@ -242,6 +256,9 @@ export class QuoteRequestsService {
       where.OR = [
         { projectName: { contains: searchTerm, mode: 'insensitive' } },
         { description: { contains: searchTerm, mode: 'insensitive' } },
+        { guestName: { contains: searchTerm, mode: 'insensitive' } },
+        { guestEmail: { contains: searchTerm, mode: 'insensitive' } },
+        { guestPhone: { contains: searchTerm, mode: 'insensitive' } },
         { client: { name: { contains: searchTerm, mode: 'insensitive' } } },
         { client: { email: { contains: searchTerm, mode: 'insensitive' } } },
       ];

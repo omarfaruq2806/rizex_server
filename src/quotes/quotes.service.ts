@@ -18,6 +18,7 @@ import {
   QuoteStatus,
   QuoteRequestStatus,
   OrderStatus,
+  PaymentStatus,
   NotificationType,
 } from '@prisma/client';
 
@@ -98,14 +99,16 @@ export class QuotesService {
           data: { status: QuoteRequestStatus.QUOTE_SENT },
         });
 
-        // Notify client
-        this.notificationsService.sendNotification({
-          userId: quoteRequest.clientId,
-          title: 'New Custom Quote Received',
-          message: `You received a custom quote of ${quote.currency} ${quote.amount} for your project.`,
-          type: NotificationType.QUOTE,
-          linkUrl: `/client/quotes/${quote.id}`,
-        }).catch(() => {});
+        // Notify client if registered
+        if (quoteRequest.clientId) {
+          this.notificationsService.sendNotification({
+            userId: quoteRequest.clientId,
+            title: 'New Custom Quote Received',
+            message: `You received a custom quote of ${quote.currency} ${quote.amount} for your project.`,
+            type: NotificationType.QUOTE,
+            linkUrl: `/client/quotes/${quote.id}`,
+          }).catch(() => {});
+        }
       } else {
         await tx.quoteRequest.update({
           where: { id: dto.requestId },
@@ -202,14 +205,16 @@ export class QuotesService {
         data: { status: QuoteRequestStatus.QUOTE_SENT },
       });
 
-      // Notify client
-      this.notificationsService.sendNotification({
-        userId: updatedQuote.request.clientId,
-        title: 'New Custom Quote Received',
-        message: `You received a custom quote of ${updatedQuote.currency} ${updatedQuote.amount} for your project.`,
-        type: NotificationType.QUOTE,
-        linkUrl: `/client/quotes/${updatedQuote.id}`,
-      }).catch(() => {});
+      // Notify client if registered
+      if (updatedQuote.request.clientId) {
+        this.notificationsService.sendNotification({
+          userId: updatedQuote.request.clientId,
+          title: 'New Custom Quote Received',
+          message: `You received a custom quote of ${updatedQuote.currency} ${updatedQuote.amount} for your project.`,
+          type: NotificationType.QUOTE,
+          linkUrl: `/client/quotes/${updatedQuote.id}`,
+        }).catch(() => {});
+      }
 
       return updatedQuote;
     });
@@ -323,21 +328,41 @@ export class QuotesService {
         expectedDelivery.setDate(expectedDelivery.getDate() + quote.estimatedDays);
       }
 
-      // 3. Generate unique Order number
+      // 3. Resolve or create client
+      let finalClientId = quote.request.clientId;
+      if (!finalClientId) {
+        const guestEmail = (quote.request as any).guestEmail || `guest-${quote.request.id}@rizex.com`;
+        let clientUser = await tx.user.findUnique({ where: { email: guestEmail } });
+        if (!clientUser) {
+          clientUser = await tx.user.create({
+            data: {
+              email: guestEmail,
+              name: (quote.request as any).guestName || 'Client',
+              role: UserRole.CLIENT,
+            },
+          });
+        }
+        finalClientId = clientUser.id;
+      }
+
+      // 4. Generate unique Order number
       const orderNumber = generateOrderNumber();
       const orderTitle =
         quote.request.projectName || `${quote.request.service.name} Project`;
 
-      // 4. Create Order
+      // 5. Create Order
       const newOrder = await tx.order.create({
         data: {
           orderNumber,
-          clientId: quote.request.clientId,
+          clientId: finalClientId,
           serviceId: quote.request.serviceId,
           quoteId: quote.id,
           title: orderTitle,
-          status: OrderStatus.AWAITING_PAYMENT,
+          status: OrderStatus.CONFIRMED,
           progress: 0,
+          totalAmount: quote.amount,
+          paidAmount: new Prisma.Decimal(0),
+          paymentStatus: PaymentStatus.UNPAID,
           startDate,
           expectedDelivery,
         },

@@ -199,18 +199,25 @@ model RequirementValue {
 
 model QuoteRequest {
   id                String             @id @default(cuid())
-  clientId          String
+  clientId          String?
   serviceId         String
 
   projectName       String?
   description       String?
+
+  // Guest inquiry support
+  isGuest           Boolean            @default(false)
+  guestName         String?
+  guestEmail        String?
+  guestPhone        String?
+  budget            String?
 
   status            QuoteRequestStatus @default(SUBMITTED)
 
   createdAt         DateTime           @default(now())
   updatedAt         DateTime           @updatedAt
 
-  client            User               @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  client            User?              @relation(fields: [clientId], references: [id], onDelete: Cascade)
   service           Service            @relation(fields: [serviceId], references: [id], onDelete: Restrict)
 
   requirementValues RequirementValue[]
@@ -219,6 +226,7 @@ model QuoteRequest {
   @@index([clientId])
   @@index([serviceId])
   @@index([status])
+  @@index([isGuest])
   @@index([clientId, status])
   @@index([createdAt])
 }
@@ -270,12 +278,22 @@ model Order {
 
   clientId         String
   serviceId        String
-  quoteId          String            @unique
+  quoteId          String?           @unique
 
   title            String
 
-  status           OrderStatus       @default(AWAITING_PAYMENT)
+  status           OrderStatus       @default(CONFIRMED)
   progress         Int               @default(0)
+
+  // Financial & Payment tracking
+  totalAmount      Decimal           @default(0) @db.Decimal(12, 2)
+  paidAmount       Decimal           @default(0) @db.Decimal(12, 2)
+  paymentStatus    PaymentStatus     @default(UNPAID)
+  currency         String            @default("BDT")
+
+  // Delivery & Notes
+  deliveryUrl      String?
+  notes            String?
 
   startDate        DateTime?
   expectedDelivery DateTime?
@@ -286,7 +304,7 @@ model Order {
 
   client           User              @relation("ClientOrders", fields: [clientId], references: [id], onDelete: Restrict)
   service          Service           @relation(fields: [serviceId], references: [id], onDelete: Restrict)
-  quote            Quote             @relation(fields: [quoteId], references: [id], onDelete: Restrict)
+  quote            Quote?            @relation(fields: [quoteId], references: [id], onDelete: SetNull)
 
   assignments      OrderAssignment[]
   messages         Message[]
@@ -299,6 +317,7 @@ model Order {
 
   @@index([clientId])
   @@index([status])
+  @@index([paymentStatus])
   @@index([serviceId])
   @@index([clientId, status])
   @@index([status, createdAt])
@@ -544,6 +563,8 @@ enum QuoteRequestStatus {
   SUBMITTED
   UNDER_REVIEW
   QUOTE_SENT
+  ORDER_CREATED
+  CONVERTED
   CANCELLED
 }
 
@@ -557,10 +578,13 @@ enum QuoteStatus {
 }
 
 enum OrderStatus {
+  DRAFT
+  CONFIRMED
   AWAITING_PAYMENT
   ASSIGNED
   IN_PROGRESS
   REVIEW
+  IN_REVIEW
   REVISION
   FINAL_DELIVERY
   COMPLETED
@@ -577,6 +601,9 @@ enum PaymentMethod {
 }
 
 enum PaymentStatus {
+  UNPAID
+  PARTIALLY_PAID
+  PAID
   PENDING
   SUCCESS
   FAILED

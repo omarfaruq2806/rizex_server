@@ -1,14 +1,19 @@
 import {
   Controller,
   Get,
+  Post,
   Patch,
   Body,
   Param,
   Query,
   UseGuards,
+  HttpCode,
+  HttpStatus,
 } from '@nestjs/common';
 import { UserRole } from '@prisma/client';
 import { OrdersService } from './orders.service.js';
+import { CreateOrderDto } from './dto/create-order.dto.js';
+import { UpdateOrderPaymentDto } from './dto/update-order-payment.dto.js';
 import { UpdateOrderStatusDto } from './dto/update-order-status.dto.js';
 import { UpdateOrderProgressDto } from './dto/update-order-progress.dto.js';
 import { QueryOrdersDto } from './dto/query-orders.dto.js';
@@ -21,6 +26,30 @@ import { CurrentUser } from '../common/decorators/current-user.decorator.js';
 @UseGuards(AuthGuard)
 export class OrdersController {
   constructor(private readonly ordersService: OrdersService) {}
+
+  /**
+   * Admin creates order directly
+   */
+  @Post()
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @HttpCode(HttpStatus.CREATED)
+  async createOrder(@Body() createDto: CreateOrderDto) {
+    return this.ordersService.createOrder(createDto);
+  }
+
+  /**
+   * Admin updates manual payment for an order
+   */
+  @Patch(':id/payment')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.ADMIN)
+  async updatePayment(
+    @Param('id') id: string,
+    @Body() updateDto: UpdateOrderPaymentDto,
+  ) {
+    return this.ordersService.updatePayment(id, updateDto);
+  }
 
   /**
    * Client views their own orders

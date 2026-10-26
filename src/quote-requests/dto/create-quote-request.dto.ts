@@ -29,6 +29,23 @@ export class CreateQuoteRequestDto {
   @IsOptional()
   description?: string;
 
+  // Guest inquiry fields
+  @IsString()
+  @IsOptional()
+  guestName?: string;
+
+  @IsString()
+  @IsOptional()
+  guestEmail?: string;
+
+  @IsString()
+  @IsOptional()
+  guestPhone?: string;
+
+  @IsString()
+  @IsOptional()
+  budget?: string;
+
   @IsArray()
   @IsOptional()
   @ValidateNested({ each: true })
