@@ -50,7 +50,7 @@ import { NotificationsModule } from './notifications/notifications.module.js';
       },
     ]),
 
-    // 4. Application Feature Modules & Health Probes
+    // 4. Application Feature Modules & Health   Probes ProbesProbes
     HealthModule,
     PrismaModule,
     NotificationsModule,
